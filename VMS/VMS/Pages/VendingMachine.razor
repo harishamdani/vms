@@ -1,0 +1,168 @@
+﻿@page "/vendingmachine"
+
+@using VMS.Data.Services.Interfaces
+@using VMS.Data.Models.DTOs 
+@inject IVendingMachineService VendingMachineService
+
+<h1>Vending Machine</h1>
+
+<p>This is a Vending Machine Simulator</p>
+
+@if (_products == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Product Name</th>
+                <th>Price</th>
+                <th>Buy</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var product in _products)
+            {
+                <tr>
+                    <td>@product.Name</td>
+                    <td>@product.Price</td>
+                    <td>
+                        <button class="btn btn-primary" @onclick="@(e => BuyProduct(@product.Name))">Buy</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+}
+
+<div>
+    <label> Select coin to insert: </label>
+    <select class="form-control col-sm-3 mb-1 mt-1 ml-1" @onchange=@OnCoinClicked>
+        @foreach (var coin in _coins)
+        {
+            <option class="dropdown-item" value=@coin.Value>@coin.Key</option>
+        }
+    </select>
+    <button class="btn btn-primary" @onclick="InsertCoin">Insert Coin</button>
+    <button class="btn btn-primary" @onclick="ReturnInsertedCoin">Cancel</button>
+</div>
+
+<label>DepositMoney: @_depositMoney</label>
+
+<div>
+    <label>@_message</label>
+</div>
+
+@code {
+
+    private decimal _depositMoney = 0;
+
+    private ProductDto[] _products;
+
+    private Dictionary<string, decimal> _coins;
+
+    private decimal _selectedCoin;
+
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _products = await VendingMachineService.GetProductsAsync();
+
+        _depositMoney = await VendingMachineService.GetDepositMoneyAsync();
+
+        _coins = new Dictionary<string, decimal>()
+{
+            { "10 cent", .1M},
+            { "20 cent", .2M},
+            { "50 cent", .5M},
+            { "1 euro",   1M},
+        };
+
+        _selectedCoin = _coins["10 cent"];
+    }
+
+    private void OnCoinClicked(ChangeEventArgs coinEvent)
+    {
+        _selectedCoin = Convert.ToDecimal(coinEvent.Value);
+    }
+
+    private async Task BuyProduct(string productName)
+    {
+        var response = await VendingMachineService.BuyProductAsync(productName);
+
+        if (response.IsSuccess)
+        {
+            var message = response.Message;
+            if(response.Wallet.TotalValue > 0)
+            {
+                message += "Here is the change: ";
+                message += GetCoinChangesDetail(response.Wallet);
+            }
+
+            message += $"Total value of returned coins: {response.Wallet.TotalValue}.";
+
+            _message = message;
+            _depositMoney = 0;
+        }
+        else
+        {
+            _message = response.Message;
+        }
+    }
+
+    private async Task InsertCoin()
+    {
+        var response = await VendingMachineService.InsertCoinAsync(_selectedCoin);
+
+        if (response.IsSuccess)
+        {
+            _depositMoney = response.DepositMoney;
+            _message = $"total deposit coin(s) now: {_depositMoney}";
+        }
+        else
+        {
+            _message = $"something went wrong";
+        }
+    }
+
+    private async Task ReturnInsertedCoin()
+    {
+        var response = await VendingMachineService.CancelOrderAsync();
+        if (response.IsSuccess)
+        {
+            var message = response.Message;
+            if (response.Wallet.TotalValue > 0)
+            {
+                message += "Here is the returned change: ";
+                message += GetCoinChangesDetail(response.Wallet);
+            }
+
+            message += $"Total value of returned coins: {response.Wallet.TotalValue} euro.";
+
+            _message = message;
+            _depositMoney = 0;
+        }
+        else
+        {
+            _message = $"something went wrong";
+        }
+    }
+
+    private string GetCoinChangesDetail(WalletDto wallet)
+    {
+        var message = string.Empty;
+
+        if (wallet.OneEuroCoinAmount > 0) message += $"{wallet.OneEuroCoinAmount}x1 euro coin. ";
+        if (wallet.FiftyCentCoinAmount > 0) message += $"{wallet.FiftyCentCoinAmount}x50 cent coin. ";
+        if (wallet.TwentyCentCoinAmount > 0) message += $"{wallet.TwentyCentCoinAmount}x20 cent coin. ";
+        if (wallet.TenCentCoinAmount > 0) message += $"{wallet.TenCentCoinAmount}x10 cent coin. ";
+
+        return message;
+    }
+
+
+}
